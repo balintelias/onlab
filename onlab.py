@@ -69,15 +69,16 @@ def findPss(signal_error, Pss_time):
         sub_arr = signal_error[i:i + Pss_size]
         # print(sub_arr.size)
         # print(np.conj(Pss_time).size)
-        correlation[i] = np.correlate(sub_arr, np.conj(Pss_time))[0]
-    print(correlation)
+        # correlation[i] = np.correlate(sub_arr, np.conj(Pss_time))[0]
+        correlation[i] = np.correlate(sub_arr, Pss_time)[0]
+    # print(correlation)
     return np.argmax(np.abs(correlation)) # TODO: this is incorrect, because negative correlation values are "lost"
 
 
 CARRIERNO = 256  # no. of subcarriers
 MU = 4  # bits / symbol
 SNRdB = 5
-NOISE_LENGTH = 11
+NOISE_LENGTH = 100
 
 Nid = 0
 x = PSSgenX()
@@ -93,24 +94,37 @@ Pss_time_extended = np.append(Pss_time_zeros, Pss_time)
 Pss_time_extended = np.append(Pss_time_extended, Pss_time_zeros)
 
 p_vector = np.array([])
+SNR_vector = np.array([])
 
-for x in range(15):
-    SNRdB = x - 10 # simulating from -10 dB to 5 dB
+for x in range(50):
+    SNRdB = x - 45 # simulating from -45 dB to 5 dB
     increment = 0
     NoisePower = calculateNoisePower(Pss_time, SNRdB)
-    for simulation in range(100):
+    for simulation in range(400):
         Noise_time = generateNoise(NoisePower)
         signal_time = Noise_time + Pss_time_extended
         signal_error = add_error(signal_time)
         index = findPss(signal_error, Pss_time)
-        # print(index)
+        # print(f"findPss által megtalált index:{index}")
         if index == NOISE_LENGTH:
             increment = increment + 1
-    p = increment / 100
+    p = increment / 400
     print(f"{x} {p}")
     p_vector = np.append(p_vector, p)
+    SNR_vector = np.append(SNR_vector, SNRdB)
 
-print(p_vector)
+# print(p_vector)
+plt.figure(figsize=(10, 6))  # Set the figure size
+plt.plot(SNR_vector, p_vector, marker='o', linestyle='-', color='b')  # Set marker style, line style, and color
+
+plt.title('Downlink irányú PSS detekció 10 ppm frekvenciahiba esetén')  # Set the title of the plot
+plt.xlabel('SNR [dB]')  # Set the label for the x-axis
+plt.ylabel('Helyes Pss megtalálásának valószínűsége')  # Set the label for the y-axis
+
+plt.grid('minor')  # Add a grid
+# plt.legend(['Data'])  # Add a legend
+
+plt.show()
 
     
 
