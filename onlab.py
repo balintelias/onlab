@@ -9,6 +9,7 @@ import cmath
 
 PI = 3.141592653589793
 
+
 # Creating X vector
 def PSSgenX():
     X = np.zeros(127)
@@ -22,6 +23,7 @@ def PSSgenX():
     for bit in range(127 - 7):
         X[bit + 7] = (X[bit + 4] + X[bit]) % 2
     return X
+
 
 # creating PSS signal
 def PSSgen(x, Nid):
@@ -47,32 +49,36 @@ def calculateNoisePower(time_domain, SNRdB):
 
 def generateNoise(sigma2):
     # komplex zaj sigma2 teljesítménnyel, kétdimenziós normális eloszlás
-    noise_real = np.sqrt(sigma2) / 2 * np.random.randn(2*NOISE_LENGTH + CARRIERNO)
-    noise_imag = np.sqrt(sigma2) / 2 * 1j * np.random.randn(2*NOISE_LENGTH + CARRIERNO)
+    noise_real = np.sqrt(sigma2) / 2 * np.random.randn(2 * NOISE_LENGTH + CARRIERNO)
+    noise_imag = (
+        np.sqrt(sigma2) / 2 * 1j * np.random.randn(2 * NOISE_LENGTH + CARRIERNO)
+    )
     noise = noise_real + noise_imag
     return noise
 
+
 # adding frequency error to the signal
-def add_error(signal_time):
+def add_error(signal_time, normalized_frequency_offset):
     size = signal_time.size
     error = np.zeros_like(signal_time)
     for index in range(size):
-        error[index] = cmath.exp(2*PI*10/1000000*index)
+        error[index] = cmath.exp(1j * 2 * PI * normalized_frequency_offset * index)
     signal_error = signal_time * error
     return signal_error
+
 
 # finding PSS in the time domain
 def findPss(signal_error, Pss_time):
     Pss_size = 256
-    correlation = np.zeros(signal_error.size-Pss_size)
+    correlation = np.zeros(signal_error.size - Pss_size)
     for i in range(correlation.size):
-        sub_arr = signal_error[i:i + Pss_size]
+        sub_arr = signal_error[i : i + Pss_size]
         # print(sub_arr.size)
         # print(np.conj(Pss_time).size)
         # correlation[i] = np.correlate(sub_arr, np.conj(Pss_time))[0]
         correlation[i] = np.correlate(sub_arr, Pss_time)[0]
     # print(correlation)
-    return np.argmax(np.abs(correlation)) # TODO: this is incorrect, because negative correlation values are "lost"
+    return np.argmax(np.abs(correlation))
 
 
 CARRIERNO = 256  # no. of subcarriers
@@ -97,13 +103,13 @@ p_vector = np.array([])
 SNR_vector = np.array([])
 
 for x in range(50):
-    SNRdB = x - 45 # simulating from -45 dB to 5 dB
+    SNRdB = x - 45  # simulating from -45 dB to 5 dB
     increment = 0
     NoisePower = calculateNoisePower(Pss_time, SNRdB)
     for simulation in range(400):
         Noise_time = generateNoise(NoisePower)
         signal_time = Noise_time + Pss_time_extended
-        signal_error = add_error(signal_time)
+        signal_error = add_error(signal_time, 0.0007)
         index = findPss(signal_error, Pss_time)
         # print(f"findPss által megtalált index:{index}")
         if index == NOISE_LENGTH:
@@ -115,19 +121,29 @@ for x in range(50):
 
 # print(p_vector)
 plt.figure(figsize=(10, 6))  # Set the figure size
-plt.plot(SNR_vector, p_vector, marker='o', linestyle='-', color='b')  # Set marker style, line style, and color
+plt.plot(
+    SNR_vector, p_vector, marker="o", linestyle="-", color="b"
+)  # Set marker style, line style, and color
 
-plt.title('Downlink irányú PSS detekció 10 ppm frekvenciahiba esetén')  # Set the title of the plot
-plt.xlabel('SNR [dB]')  # Set the label for the x-axis
-plt.ylabel('Helyes Pss megtalálásának valószínűsége')  # Set the label for the y-axis
+plt.title(
+    "Downlink irányú PSS detekció 10 ppm frekvenciahiba esetén"
+)  # Set the title of the plot
+plt.xlabel("SNR [dB]")  # Set the label for the x-axis
+plt.ylabel("Helyes Pss megtalálásának valószínűsége")  # Set the label for the y-axis
 
-plt.grid('minor')  # Add a grid
+plt.grid("minor")  # Add a grid
 # plt.legend(['Data'])  # Add a legend
 
 plt.show()
 
-    
 
+"""
+ppm szerint pásztázni.
+
+pss után sss-ből frekihibát becsülni.
+
+jel zaj viszony függvényében mennyire pontos a frekvenciabecslés (mennyi a varianciája).
+"""
 
 # Nid = 1
 # x = PSSgenX()
