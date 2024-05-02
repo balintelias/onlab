@@ -9,7 +9,8 @@ import cmath
 
 PI = 3.141592653589793
 
-# Creating X vector
+
+# PSS szimbólumhoz szükséges X vektor létrehozása
 def PSSgenX():
     X = np.zeros(127)
     X[0] = 0
@@ -23,7 +24,8 @@ def PSSgenX():
         X[bit + 7] = (X[bit + 4] + X[bit]) % 2
     return X
 
-# creating PSS signal
+
+# PSS szimbólum létrehozása
 def PSSgen(x, Nid):
     Pss = np.zeros(127)
     for bit in range(127):
@@ -34,45 +36,94 @@ def PSSgen(x, Nid):
     return Pss
 
 
+# IFFT
 def IFFT(symbols_frequency):
     ifft_results = np.fft.ifft(symbols_frequency)
     return ifft_results
 
 
+# Időtartzományibeli jelhez számít zajteljesítményt
 def calculateNoisePower(time_domain, SNRdB):
     signal_power = np.mean(abs(time_domain**2))
     sigma2 = signal_power * 10 ** (-SNRdB / 10)  # zajteljesítmény
     return sigma2
 
 
-def generateNoise(sigma2):
+# Gaussi zajt ad a jelhez
+def generateNoise(sigma2, Symbol_time_extended):
     # komplex zaj sigma2 teljesítménnyel, kétdimenziós normális eloszlás
-    noise_real = np.sqrt(sigma2) / 2 * np.random.randn(2*NOISE_LENGTH + CARRIERNO)
-    noise_imag = np.sqrt(sigma2) / 2 * 1j * np.random.randn(2*NOISE_LENGTH + CARRIERNO)
+    noise_real = np.sqrt(sigma2) / 2 * np.random.randn(Symbol_time_extended.size)
+    noise_imag = np.sqrt(sigma2) / 2 * 1j * np.random.randn(Symbol_time_extended.size)
     noise = noise_real + noise_imag
     return noise
 
-# adding frequency error to the signal
-def add_error(signal_time):
+
+# Frekvenciahibát ad a jelhez
+def add_error(signal_time, normalized_frequency_offset):
     size = signal_time.size
     error = np.zeros_like(signal_time)
     for index in range(size):
-        error[index] = cmath.exp(2*PI*10/1000000*index)
+        error[index] = cmath.exp(1j * 2 * PI * normalized_frequency_offset * index)
     signal_error = signal_time * error
     return signal_error
 
-# finding PSS in the time domain
+
+# Megkeresi a PSS szimbólumot időtartományban
 def findPss(signal_error, Pss_time):
     Pss_size = 256
-    correlation = np.zeros(signal_error.size-Pss_size)
+    correlation = np.zeros(signal_error.size - Pss_size)
     for i in range(correlation.size):
-        sub_arr = signal_error[i:i + Pss_size]
+        sub_arr = signal_error[i : i + Pss_size]
         # print(sub_arr.size)
         # print(np.conj(Pss_time).size)
         # correlation[i] = np.correlate(sub_arr, np.conj(Pss_time))[0]
         correlation[i] = np.correlate(sub_arr, Pss_time)[0]
     # print(correlation)
-    return np.argmax(np.abs(correlation)) # TODO: this is incorrect, because negative correlation values are "lost"
+    return np.argmax(np.abs(correlation))
+
+
+# SSS szimbólumhoz szükséges X vektor létrehozása
+def SSSgenX12():
+    X = np.zeros(127)
+    X[0] = 1
+    X[1] = 0
+    X[2] = 0
+    X[3] = 0
+    X[4] = 0
+    X[5] = 0
+    X[6] = 0
+    for bit in range(127 - 7):
+        X[bit + 7] = (X[bit + 4] + X[bit]) % 2
+    return X
+
+
+# SSS szimbólum létrehozása
+def SSSgen(X, Nid1, Nid2):
+    m1 = Nid1 % 112
+    m0 = 15 * (Nid1 / 112) + 5 * Nid2
+    dsss = np.zeros(127)
+    for i in range(127):
+        X_index_1 = int((i + m0) % 127)
+        X_index_2 = int((i + m1) % 127)
+        dsss[i] = (1 - 2 * X[X_index_1]) * (1 - 2 * X[X_index_2])
+    return dsss
+
+
+# Összes lehetséges SSS generálása
+def gen_all_SSS(X, Nid2):
+    SSS_all = np.zeros((356, 127))
+    for x in range(355):
+        SSS_all[x] = SSSgen(X, x, Nid2)
+    return SSS_all
+
+
+# SSS szimbólum evaluálása
+def evaluateSSS(SSS_hat, Nid2, X, SSS_all):
+    corr = np.zeros(336)
+    for i in range(335):
+        corr[i] = np.correlate(SSS_all[i], SSS_hat)[0]
+    Nid1 = np.argmax(np.abs(corr))
+    return Nid1
 
 
 CARRIERNO = 256  # no. of subcarriers
@@ -80,61 +131,102 @@ MU = 4  # bits / symbol
 SNRdB = 5
 NOISE_LENGTH = 100
 
-Nid = 0
+# Szimulációs paraméterek
+Nid2 = 0
+Nid1 = 120
+
+SSS_all = gen_all_SSS(SSSgenX12(), Nid2)
+
+# Kezdőinformációk:
 x = PSSgenX()
-Pss = PSSgen(x, Nid)
-begin = np.zeros(56)  # TODO: don't hardcode it
-end = np.zeros(73)  # TODO: don't hardcode it
+X_sss = SSSgenX12()
+begin = np.zeros(56)  # 256 alvivő miatt
+end = np.zeros(73)
+
+# Pss generálása
+Pss = PSSgen(x, Nid2)
 Pss = np.append(begin, Pss)
 Pss = np.append(Pss, end)
-Pss_time = IFFT(Pss)
+Pss_time = IFFT(Pss)  # Pss időtartományban
+Pss_time_length = Pss_time.size  # debug
 
-Pss_time_zeros = np.zeros(NOISE_LENGTH)
-Pss_time_extended = np.append(Pss_time_zeros, Pss_time)
-Pss_time_extended = np.append(Pss_time_extended, Pss_time_zeros)
+Sss = SSSgen(X_sss, Nid1, Nid2)
+Sss = np.append(begin, Sss)
+Sss = np.append(Sss, end)
+Sss_time = IFFT(Sss)  # SSS időtartományban
+Sss_time_length = Sss_time.size  # debug
 
-p_vector = np.array([])
+Symbol_time = np.append(Pss_time, Sss_time)  # Pss és Sss időtartományban egymás után
+
+Symbol_time_zeros = np.zeros(NOISE_LENGTH)
+Symbol_time_extended = np.append(Symbol_time_zeros, Symbol_time)
+Symbol_time_extended = np.append(
+    Symbol_time_extended, Symbol_time_zeros
+)  # Előtte és utána üres hely
+
+Pss_probability_vector = np.array([])
+Sss_probability_vector = np.array([])
 SNR_vector = np.array([])
 
 for x in range(50):
-    SNRdB = x - 45 # simulating from -45 dB to 5 dB
-    increment = 0
+    SNRdB = x - 45  #  -45 dB-től 5 dB-ig szimulálok
+    Pss_found = 0
+    Nid1_found = 0
     NoisePower = calculateNoisePower(Pss_time, SNRdB)
+
     for simulation in range(400):
-        Noise_time = generateNoise(NoisePower)
-        signal_time = Noise_time + Pss_time_extended
-        signal_error = add_error(signal_time)
-        index = findPss(signal_error, Pss_time)
-        # print(f"findPss által megtalált index:{index}")
+        Noise_time = generateNoise(NoisePower, Symbol_time_extended)
+        signal_time = Noise_time + Symbol_time_extended
+        signal_error = add_error(signal_time, 0.0001)  # hozzáadjuk a frekvenciahibát
+        index = findPss(signal_error, Pss_time)  # Pss kezdete
+
         if index == NOISE_LENGTH:
-            increment = increment + 1
-    p = increment / 400
-    print(f"{x} {p}")
-    p_vector = np.append(p_vector, p)
+            Pss_found = Pss_found + 1
+
+            # Miután megvan az index, a Pss utáni Sss-ből megpróbáljuk kitalálni, hogy milyen CellID-t kapott a telefon
+            # Keressük a legnagyobb korrelációs együtthatóval rendelkező Nid1 SSS-t
+            SSS_hat = signal_error[
+                index + Pss_time.size : index + Pss_time.size + Sss_time.size
+            ]
+            
+            # if x > 35:
+                # print(f"{index + Pss_time.size} {index + Pss_time.size + Sss_time.size}" ) # debug
+                
+            Nid1_hat = evaluateSSS(SSS_hat, Nid2, X_sss, SSS_all)  # becsült Nid1
+            if Nid1_hat == Nid1:
+                Nid1_found = Nid1_found + 1
+
+    # Valószínűségek:
+    Pss_probability = Pss_found / 400
+    if Pss_found != 0:
+        Sss_probability = Nid1_found / Pss_found
+    else:
+        Sss_probability = 0
+
+    print(f"{x} {Pss_probability} {Sss_probability}")
+    Pss_probability_vector = np.append(Pss_probability_vector, Pss_probability)
+    Sss_probability_vector = np.append(Sss_probability_vector, Sss_probability)
     SNR_vector = np.append(SNR_vector, SNRdB)
 
-# print(p_vector)
-plt.figure(figsize=(10, 6))  # Set the figure size
-plt.plot(SNR_vector, p_vector, marker='o', linestyle='-', color='b')  # Set marker style, line style, and color
+# Eredmények megjelenítése
+plt.figure(figsize=(10, 6))
+plt.plot(SNR_vector, Pss_probability_vector, marker="o", linestyle="-", color="b")
+plt.plot(SNR_vector, Sss_probability_vector, marker="o", linestyle="-", color="r")
 
-plt.title('Downlink irányú PSS detekció 10 ppm frekvenciahiba esetén')  # Set the title of the plot
-plt.xlabel('SNR [dB]')  # Set the label for the x-axis
-plt.ylabel('Helyes Pss megtalálásának valószínűsége')  # Set the label for the y-axis
+plt.title("Downlink irányú PSS és SSS detekció frekvenciahibával terhelve")
+plt.xlabel("SNR [dB]")
+plt.ylabel("Helyes Pss és Sss megtalálásának valószínűsége")
 
-plt.grid('minor')  # Add a grid
-# plt.legend(['Data'])  # Add a legend
+plt.grid("minor")
+plt.legend(["Pss", "Sss"])
 
-plt.show()
-
-    
+plt.savefig("output.png")
 
 
-# Nid = 1
-# x = PSSgenX()
-# dpss = PSSgen(x, Nid)
-# print(dpss)
+"""
+ppm szerint pásztázni.
 
-# Nid = 2
-# x = PSSgenX()
-# dpss = PSSgen(x, Nid)
-# print(dpss)
+pss után sss-ből frekihibát becsülni.
+
+jel zaj viszony függvényében mennyire pontos a frekvenciabecslés (mennyi a varianciája).
+"""
