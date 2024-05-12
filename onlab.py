@@ -6,6 +6,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import cmath
+import scipy
 
 PI = 3.141592653589793
 
@@ -68,23 +69,29 @@ def add_error(signal_time, normalized_frequency_offset):
     size = signal_time.size
     error = np.zeros_like(signal_time)
     for index in range(size):
-        error[index] = cmath.exp(1j * 2 * PI * normalized_frequency_offset * index)
+        error[index] = cmath.exp(1j * 2 * PI * normalized_frequency_offset / 256 * index)
     signal_error = signal_time * error
     return signal_error
 
 
 # Megkeresi a PSS szimbólumot időtartományban
 def findPss(signal_error, Pss_time):
+    correlation_limit = 0.15
     Pss_size = 256
     correlation = np.zeros(signal_error.size - Pss_size)
     for i in range(correlation.size):
         sub_arr = signal_error[i : i + Pss_size]
-        # print(sub_arr.size)
-        # print(np.conj(Pss_time).size)
-        # correlation[i] = np.correlate(sub_arr, np.conj(Pss_time))[0]
         correlation[i] = np.correlate(sub_arr, Pss_time)[0]
-    # print(correlation)
-    return np.argmax(np.abs(correlation))
+
+        # correlation[i] = scipy.signal.correlate(sub_arr, Pss_time, mode='valid')[0]
+        correlation[i] /= np.sqrt(np.sum(np.abs(sub_arr)**2)*np.sum(np.abs(Pss_time)**2))
+        if correlation[i] < correlation_limit:
+            correlation[i] = 0
+
+    index = np.argmax(np.abs(correlation))
+    corr_value = correlation[index]
+    return_tuple = (index, corr_value)
+    return return_tuple
 
 
 # SSS szimbólumhoz szükséges X vektor létrehozása
@@ -189,15 +196,20 @@ for x in range(50):
     NoisePower = calculateNoisePower(Pss_time, SNRdB)
     sim_number = 1000
 
+    correlations = np.array([])
+
     for simulation in range(sim_number):
         Noise_time = generateNoise(NoisePower, Symbol_time_extended)
         signal_time = Noise_time + Symbol_time_extended
         # hozzáadjuk a frekvenciahibát
-        signal_error = add_error(signal_time, 0.0001)
-        index = findPss(signal_error, Pss_time)  # Pss kezdete
+        signal_error = add_error(signal_time, 0.01)
+        index_tuple = findPss(signal_error, Pss_time)  # Pss kezdete
+        index = index_tuple[0]
+        corr = index_tuple[1]
 
         if index == NOISE_LENGTH:
             Pss_found = Pss_found + 1
+            correlations = np.append(correlations, corr)
 
             # Miután megvan az index, a Pss utáni Sss-ből megpróbáljuk
             # kitalálni, hogy milyen CellID-t kapott a telefon
@@ -208,10 +220,6 @@ for x in range(50):
                 index + Pss_time.size : index + Pss_time.size + Sss_time.size
             ]
 
-            # if x > 35:
-            # print(f"{index + Pss_time.size}
-            # {index + Pss_time.size + Sss_time.size}" ) # debug
-
             # becsült Nid1
             Nid1_hat = evaluateSSS(SSS_hat, Nid2, X_sss, SSS_all)
             if Nid1_hat == Nid1:
@@ -221,15 +229,24 @@ for x in range(50):
     Pss_probability = Pss_found / sim_number
     Sss_probability = Nid1_found / sim_number
 
+
+    # print(correlations)
     if Pss_found != 0:
         Sss_conditional_probability = Nid1_found / Pss_found
     else:
         Sss_conditional_probability = 0
 
+    if correlations.size != 0:
+        corr_mean = np.mean(correlations)
+    else:
+        corr_mean = 0
+
     print(
         f"""x: {x}, SNR: {SNRdB}
         Pss_found:  {Pss_found}->{Pss_probability},
-        correct Cell ID: {Nid1_found}->{Sss_probability}"""
+        correct Cell ID: {Nid1_found}->{Sss_probability},
+        Correlation mean: {corr_mean}
+        """
     )
     # print(f"{x} {Pss_probability} {Sss_probability}")
     Pss_probability_vector = np.append(Pss_probability_vector, Pss_probability)
@@ -262,4 +279,14 @@ ppm szerint pásztázni.
 pss után sss-ből frekihibát becsülni.
 
 jel zaj viszony függvényében mennyire pontos a frekvenciabecslés (mennyi a varianciája).
+"""
+
+
+"""
+kuszob a detekciora
+frekvenciahelyreallitas
+hibaarany (hibas detekcio) (kuszob feletti hibak)
+
+relativ primes kereses a pss ismetlodes szerint (mennyi ido lehet??)
+bejovo teljesitmenybol allithatjuk a kuszobot
 """
