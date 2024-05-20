@@ -153,10 +153,16 @@ def frequency_offset_estimation(signal_error, index, expected_pss):
     # phase_difference = np.angle(np.dot(received_pss, np.conj(expected_pss)))
     # frequency_offset = np.pi * phase_difference /
     phase_1 = np.angle(
-        np.dot(received_pss[0 : int(Nfft / 2 - 1)], np.conj(expected_pss[0 : int(Nfft / 2 - 1)]))
+        np.dot(
+            received_pss[0 : int(Nfft / 2 - 1)],
+            np.conj(expected_pss[0 : int(Nfft / 2 - 1)]),
+        )
     )
     phase_2 = np.angle(
-        np.dot(received_pss[int(Nfft / 2) : Nfft - 1], np.conj(expected_pss[int(Nfft / 2) : Nfft - 1]))
+        np.dot(
+            received_pss[int(Nfft / 2) : Nfft - 1],
+            np.conj(expected_pss[int(Nfft / 2) : Nfft - 1]),
+        )
     )
     phase_difference = phase_2 - phase_1
     frequency_offset = 1 / np.pi * phase_difference
@@ -195,15 +201,16 @@ def compensate_error(signal_error, freq_error):
 CARRIERNO = 256  # no. of subcarriers
 MU = 4  # bits / symbol
 SNRdB = 5
-NOISE_LENGTH = 100
+NOISE_LENGTH = 10
 Nfft = 256
 
 # Szimulációs paraméterek
 Nid2 = 0
 Nid1 = 120
-deltaF = float(sys.argv[1])
-correlation_limit = float(sys.argv[2])
-reset = int(sys.argv[3])
+
+# correlation_limit = float(sys.argv[1])
+correlation_limit = float(0.15)
+
 
 SSS_all = gen_all_SSS(SSSgenX12(), Nid2)
 
@@ -246,148 +253,99 @@ SNR_vector = np.array([])
 
 data_pairs = []
 
-for x in range(50):
+for x in range(1):
     data_entry = []
-    SNRdB = x - 45 #  -45 dB-től 5 dB-ig szimulálok
-    # SNRdB = 5
+    # SNRdB = x - 45 #  -45 dB-től 5 dB-ig szimulálok
+    SNRdB = 5
     Pss_found = 0
     Pss_notfound = 0
     Pss_false = 0
     Nid1_found = 0
-    NoisePower = calculateNoisePower(Pss_time, SNRdB)
-    sim_number = 1000
+    # NoisePower = calculateNoisePower(Pss_time, SNRdB)
+    sim_number = 10
 
     correlations = np.array([])
-    freq_error_vector = np.array([])
-
-    for simulation in range(sim_number):
-        Noise_time = generateNoise(NoisePower, Symbol_time_extended)
-        signal_time = Noise_time + Symbol_time_extended
-        # hozzáadjuk a frekvenciahibát
-        signal_error = add_error(signal_time, deltaF)
-        index_tuple = findPss(signal_error, Pss_time, correlation_limit)  # Pss kezdete
-        index = index_tuple[0]
-        corr = index_tuple[1]
-
-        if index == NOISE_LENGTH:
-            Pss_found = Pss_found + 1
-            correlations = np.append(correlations, corr)
-
-            # Frekvenciahiba visszaállítása
-            # freq_error = measure_error(signal_error, index, Pss_time)
-            freq_error = frequency_offset_estimation(signal_error, index, Pss_time)
-            # print(f"Frekvenciahiba: {deltaF} becsült: {np.real(freq_error)}")
-
-            if np.abs(freq_error) < 100:
-                signal_reset = compensate_error(signal_error, freq_error)
-            else:
-                signal_reset = signal_error  # nem lehet kompenzálni
-
-            if reset == 0:
-                signal = signal_error
-            else:
-                signal = signal_reset
-
-            freq_error_vector = np.append(freq_error_vector, freq_error)
-
-            # Miután megvan az index, a Pss utáni Sss-ből megpróbáljuk
-            # kitalálni, hogy milyen CellID-t kapott a telefon
-
-            # Keressük a legnagyobb korrelációs együtthatóval
-            # rendelkező Nid1 SSS-t
-            SSS_hat = signal[
-                index + Pss_time.size : index + Pss_time.size + Sss_time.size
-            ]
-
-            # becsült Nid1
-            Nid1_hat = evaluateSSS(SSS_hat, Nid2, X_sss, SSS_all)
-            if Nid1_hat == Nid1:
-                Nid1_found = Nid1_found + 1
-        else:
-            if index == 0:
-                Pss_notfound += 1
-            else:
-                Pss_false += 1
-
-    # Valószínűségek:
-    Pss_probability = Pss_found / sim_number
-    Pss_notfound_probability = Pss_notfound / sim_number
-    Pss_false_probability = Pss_false / sim_number
-    Sss_probability = Nid1_found / sim_number
-
-    freq_error_var = np.var(freq_error_vector)
-    # print(np.var(np.abs(freq_error_vector)))
-    # print(np.var(freq_error_vector))
-    freq_error_variance_vector = np.append(freq_error_variance_vector, freq_error_var)
-
-    # print(correlations)
-    if Pss_found != 0:
-        Sss_conditional_probability = Nid1_found / Pss_found
-    else:
-        Sss_conditional_probability = 0
-
-    if correlations.size != 0:
-        corr_mean = np.mean(correlations)
-    else:
-        corr_mean = 0
-
-    print(
-        f"""x: {x}, SNR: {SNRdB}
-        Pss_found:  {Pss_found}->{Pss_probability},
-        correct Cell ID: {Nid1_found}->{Sss_probability},
-        Correlation mean: {corr_mean},
-        Variance: {freq_error_var}
-        """
-    )
-
-    data_entry.extend([x])
-    data_entry.extend([SNRdB])
-    data_entry.extend([Pss_found])
-    data_entry.extend([Pss_probability])
-    data_entry.extend([Nid1_found])
-    data_entry.extend([Sss_probability])
-    data_entry.extend([corr_mean])
-    data_entry.extend([freq_error_var])
-
-    Pss_probability_vector = np.append(Pss_probability_vector, Pss_probability)
-    Pss_false_probability_vector = np.append(
-        Pss_false_probability_vector, Pss_false_probability
-    )
-    Pss_notfound_probability_vector = np.append(
-        Pss_notfound_probability_vector, Pss_notfound_probability
-    )
-    Sss_probability_vector = np.append(Sss_probability_vector, Sss_probability)
-    SNR_vector = np.append(SNR_vector, SNRdB)
-
-    data_pairs.append(data_entry)
+    freq_error_mean_vector = np.array([])
+    xaxis = np.array([])
 
 
+    for i in range(300):
+
+        error = i / 100 - 1.5
+        xaxis = np.append(xaxis, error)
+        deltaF = error
+        freq_error_vector = np.array([])
+        for simulation in range(sim_number):
+            print(f"Error: {error}, Simulation: {simulation}/{sim_number}")
+            # Noise_time = generateNoise(NoisePower, Symbol_time_extended)
+            # signal_time = Noise_time + Symbol_time_extended
+            signal_time = Symbol_time_extended
+            # hozzáadjuk a frekvenciahibát
+            signal_error = add_error(signal_time, deltaF)
+            index_tuple = findPss(
+                signal_error, Pss_time, correlation_limit
+            )  # Pss kezdete
+            index = index_tuple[0]
+            corr = index_tuple[1]
+
+            if index == NOISE_LENGTH:
+                Pss_found = Pss_found + 1
+                correlations = np.append(correlations, corr)
+
+                # Frekvenciahiba visszaállítása
+                # freq_error = measure_error(signal_error, index, Pss_time)
+                freq_error = frequency_offset_estimation(signal_error, index, Pss_time)
+                # print(f"Frekvenciahiba: {deltaF} becsült: {np.real(freq_error)}")
+
+                # if np.abs(freq_error) < 100:
+                #     signal_reset = compensate_error(signal_error, freq_error)
+                # else:
+                #     signal_reset = signal_error  # nem lehet kompenzálni
+
+                # if reset == 0:
+                #     signal = signal_error
+                # else:
+                #     signal = signal_reset
+
+                freq_error_vector = np.append(freq_error_vector, freq_error)
+
+                # Miután megvan az index, a Pss utáni Sss-ből megpróbáljuk
+                # kitalálni, hogy milyen CellID-t kapott a telefon
+
+                # Keressük a legnagyobb korrelációs együtthatóval
+                # rendelkező Nid1 SSS-t
+
+
+        error_mean = np.mean(freq_error_vector)
+        freq_error_mean_vector = np.append(freq_error_mean_vector, error_mean)
+
+
+
+freq_error_mean_vector = np.nan_to_num(freq_error_mean_vector)
 # Eredmények megjelenítése
 plt.figure(figsize=(10, 6))
-plt.plot(SNR_vector, Pss_probability_vector, marker="o", linestyle="-", color="b")
-plt.plot(SNR_vector, Sss_probability_vector, marker="o", linestyle="-", color="r")
-plt.plot(SNR_vector, Pss_false_probability_vector, marker="o", linestyle="-", color="g")
-plt.plot(SNR_vector, Pss_notfound_probability_vector, marker="o", linestyle="-", color="c")
+plt.plot(xaxis, freq_error_mean_vector, linestyle="-", color="b")
 
-plt.title(f"Downlink irányú PSS és SSS detekció f={deltaF} frekvenciahibával terhelve")
-plt.xlabel("SNR [dB]")
-plt.ylabel("Helyes Pss és Sss megtalálásának valószínűsége")
+
+plt.title(f"Downlink irányú PSS detekció S-görbéje")
+plt.xlabel("Normalizált frekvenciahiba")
+plt.ylabel("Becsült frekvenciahiba")
 
 plt.grid("minor")
 # plt.legend(["Pss", "Sss", "Conditional"])
-plt.legend(["Pss", "Sss", "Pss_false", "Pss_notfound"])
+plt.legend([])
 
-plt.savefig("output.png")
+plt.savefig("curve.png")
 plt.close()
 
-plt.figure(figsize=(10, 6))
-plt.plot(SNR_vector, freq_error_variance_vector)
-plt.title(f"Becsült frekvenciahiba varianciája, f={deltaF}")
-plt.xlabel("SNR [dB]")
-plt.ylabel("Variancia")
-plt.grid("minor")
-plt.semilogy()
-plt.savefig("variance.png")
+# plt.figure(figsize=(10, 6))
+# plt.plot(SNR_vector, freq_error_variance_vector)
+# plt.title(f"Becsült frekvenciahiba varianciája, f={deltaF}")
+# plt.xlabel("SNR [dB]")
+# plt.ylabel("Variancia")
+# plt.grid("minor")
+# plt.semilogy()
+# plt.savefig("variance.png")
 
 # print(SNR_vector)
 # print(freq_error_variance_vector)
@@ -412,10 +370,10 @@ bejovo teljesitmenybol allithatjuk a kuszobot
 """
 
 # Specify the file name
-file_name = f'output-F{deltaF}-L{correlation_limit}-R{reset}.csv'
+file_name = f"output-F{deltaF}-L{correlation_limit}-R{reset}.csv"
 
 # Writing the list to a CSV file
-with open(file_name, 'w', newline='') as csvfile:
+with open(file_name, "w", newline="") as csvfile:
     writer = csv.writer(csvfile)
     writer.writerows(data_pairs)
 
