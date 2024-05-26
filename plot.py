@@ -79,6 +79,33 @@ plt.legend(["limit=0", "limit=0.05", "limit=0.1", "limit=0.2", "limit=0.3"])
 plt.savefig("feladat2.png")
 plt.close()
 
+# Kuszob maskepp
+df_02 = pd.read_csv(f"output-F0.1-L0.15-R0.csv")
+
+SNR_Pss_prob_02 = list(zip(df_02.iloc[:, 1], df_02.iloc[:, 3]))
+SNR_Pss_false_prob_02 = list(zip(df_02.iloc[:, 1], df_02.iloc[:, 8]))
+SNR_Pss__notfound_prob_02 = list(zip(df_02.iloc[:, 1], df_02.iloc[:, 9]))
+
+x1, y1 = zip(*SNR_Pss_prob_02)
+x2, y2 = zip(*SNR_Pss_false_prob_02)
+x3, y3 = zip(*SNR_Pss__notfound_prob_02)
+
+plt.figure(figsize=(10, 6))
+plt.plot(x1, y1)
+plt.plot(x2, y2)
+plt.plot(x3, y3)
+plt.plot(x4, y4)
+plt.plot(x5, y5)
+plt.title(f"Downlink irányú PSS detekció frekvenciahibával terhelve")
+plt.xlabel("SNR [dB]")
+plt.ylabel("Helyes PSS megtalálásának valószínűsége")
+
+plt.grid("minor")
+plt.legend(["Helyes PSS", "Küszöb felett, helytelen", "Küszöb alatt"])
+plt.savefig("feladat21.png")
+plt.close()
+
+
 # 3. feladat SSS
 # df_00 = pd.read_csv(f"output-F0.0L0.15.csv")
 # df_005 = pd.read_csv(f"output-F0.05L0.15.csv")

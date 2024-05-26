@@ -348,6 +348,9 @@ for x in range(50):
     data_entry.extend([Sss_probability])
     data_entry.extend([corr_mean])
     data_entry.extend([freq_error_var])
+    data_entry.extend([Pss_false_probability])
+    data_entry.extend([Pss_notfound_probability])
+    
 
     Pss_probability_vector = np.append(Pss_probability_vector, Pss_probability)
     Pss_false_probability_vector = np.append(
